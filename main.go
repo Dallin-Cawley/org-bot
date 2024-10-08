@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
-	"github.com/bwmarrin/discordgo"
 	"log"
-	"orgBot/commandHandlers"
-	"orgBot/database"
 	"os"
 	"os/signal"
+
+	"orgBot/commandHandlers"
+	"orgBot/database"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func main() {
@@ -21,8 +23,11 @@ func main() {
 		log.Fatalf("Invalid bot parameters: %v", err)
 	}
 
+	discordSession.Identify.Intents = discordgo.IntentsAll
+
 	discordSession.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) { log.Println("Bot is up!") })
 	discordSession.AddHandler(commandHandlers.GuildCreate)
+	discordSession.AddHandler(commandHandlers.VoiceChannelStatusUpdate)
 
 	discordSession.AddHandler(func(session *discordgo.Session, interaction *discordgo.InteractionCreate) {
 		switch interaction.ApplicationCommandData().Name {
@@ -30,6 +35,8 @@ func main() {
 			commandHandlers.HandleTeam(session, interaction)
 		case "join_to_create":
 			commandHandlers.JoinToCreateVoiceChat(session, interaction)
+		case "copy_role":
+			commandHandlers.AddRoleSync(session, interaction)
 		}
 	})
 

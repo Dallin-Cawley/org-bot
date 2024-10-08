@@ -3,6 +3,7 @@ package commandHandlers
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"log"
 	"orgBot/database"
 	"orgBot/database/model"
@@ -15,8 +16,202 @@ const (
 	JOIN_VC_CHANNEL_NAME = "🔉Join to Create"
 )
 
-func JoinToCreateUserJoin(session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) {
-	interaction.
+func VoiceChannelStatusUpdate(session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) {
+	if interaction.BeforeUpdate == nil || len(interaction.BeforeUpdate.ChannelID) == 0 {
+		if len(interaction.ChannelID) > 0 {
+			if err := voiceChannelJoin(session, interaction); err != nil {
+				log.Printf("unable to process voice channel join with error [ %s ]\n", err.Error())
+			}
+		}
+	} else {
+		beforeID := interaction.BeforeUpdate.ChannelID
+		afterID := interaction.ChannelID
+
+		if len(beforeID) != 0 && len(afterID) != 0 {
+			if err := voiceChannelMove(session, interaction); err != nil {
+				log.Printf("unable to process voice channel move with error [ %s ]\n", err.Error())
+			}
+		} else if len(beforeID) != 0 && len(afterID) == 0 {
+			if err := voiceChannelLeave(session, interaction); err != nil {
+				log.Printf("unable to process voice channel leave with error [ %s ]\n", err.Error())
+			}
+		}
+	}
+}
+
+func voiceChannelJoin(session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) error {
+	transaction, err := database.BeginTransaction(context.Background())
+	if err != nil {
+		return err
+	}
+
+	if err = handleMoveIntoJoinVCChannel(transaction, session, interaction); err != nil {
+		return err
+	}
+
+	if err = transaction.Commit(context.Background()); err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	}
+
+	return nil
+}
+
+// voiceChannelMove handles a user moving from one voice channel to another. If the user has moved into a model.JoinVC
+// channel, a new channel is created and the user is moved into it. If the user has moved out of a model.JoinVCChild
+// channel, the channel is deleted if no one else is present in it.
+func voiceChannelMove(session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) error {
+	transaction, err := database.BeginTransaction(context.Background())
+	if err != nil {
+		return err
+	}
+
+	if err = handleMoveIntoJoinVCChannel(transaction, session, interaction); err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	}
+
+	if err = handleMoveOutOfJoinVCChildChannel(transaction, session, interaction); err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	}
+
+	if err = transaction.Commit(context.Background()); err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	}
+
+	return nil
+}
+
+// voiceChannelLeave handles a user leaving a voice channel. If the user has left a model.JoinVCChild channel,
+// the model.JoinVCChild channel will be deleted if there are no other members in it.
+func voiceChannelLeave(session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) error {
+	transaction, err := database.BeginTransaction(context.Background())
+	if err != nil {
+		return err
+	}
+
+	if err = handleMoveOutOfJoinVCChildChannel(transaction, session, interaction); err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	}
+
+	if err = transaction.Commit(context.Background()); err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	}
+
+	return nil
+}
+
+// handleMoveIntoJoinVCChannel moves the user into a new model.JoinVCChild channel if the joined channel was truly a
+// model.JoinVC channel. If not, nothing happens.
+func handleMoveIntoJoinVCChannel(transaction pgx.Tx, session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) error {
+	movedIn, joinVC, err := hasMovedIntoJoinVCChannel(transaction, interaction)
+	if err != nil {
+		_ = transaction.Rollback(context.Background())
+		return err
+	} else if movedIn {
+		if err = movedIntoJoinVCChannel(joinVC, transaction, session, interaction); err != nil {
+			_ = transaction.Rollback(context.Background())
+			return err
+		}
+	}
+
+	return nil
+}
+
+// handleMoveOutOfJoinVCChildChannel deletes the model.JoinVCChild channel from the server if no one is left in it.
+// If the channel that was moved out of not a model.JoinVCChild, nothing happens.
+func handleMoveOutOfJoinVCChildChannel(transaction pgx.Tx, session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) error {
+	movedOut, joinVCChild, err := hasMovedOutOfJoinVCChildChannel(transaction, interaction)
+	if err != nil {
+		return err
+	} else if movedOut {
+		if err = movedOutOfJoinVCChildChannel(joinVCChild, transaction, session); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// hasMovedIntoJoinVCChannel determines if the joined channel was truly a model.JoinVC channel.
+func hasMovedIntoJoinVCChannel(transaction pgx.Tx, interaction *discordgo.VoiceStateUpdate) (bool, model.JoinVC, error) {
+	joinVCs, err := database.ReadModel[model.JoinVC](model.MakeJoinVC(interaction.ChannelID, "", ""), transaction)
+	if err != nil {
+		if databaseUtils.NoRowsRead(err) {
+			log.Printf("Joined channel [ %s ] is not a join to create channel\n", interaction.ChannelID)
+			return false, model.JoinVC{}, nil
+		}
+
+		return false, model.JoinVC{}, err
+	}
+
+	return true, joinVCs[0], nil
+}
+
+// hasMovedOutOfJoinVCChildChannel determines if the left channel was truly a model.JoinVCChild channel.
+func hasMovedOutOfJoinVCChildChannel(transaction pgx.Tx, interaction *discordgo.VoiceStateUpdate) (bool, model.JoinVCChild, error) {
+	joinVCChildren, err := database.ReadModel[model.JoinVCChild](model.MakeJoinVCChild(interaction.BeforeUpdate.ChannelID, model.JoinVC{}), transaction)
+	if err != nil {
+		if databaseUtils.NoRowsRead(err) {
+			log.Printf("Joined channel [ %s ] is not a join to create child channel\n", interaction.ChannelID)
+			return false, model.JoinVCChild{}, nil
+		}
+
+		return false, model.JoinVCChild{}, err
+	}
+
+	return true, joinVCChildren[0], nil
+}
+
+// movedOutOfJoinVCChildChannel deletes the model.JoinVCChild channel if no users are left inside.
+func movedOutOfJoinVCChildChannel(joinVCChild model.JoinVCChild, transaction pgx.Tx, session *discordgo.Session) error {
+	numMembers, err := numMembersInVoiceChannel(joinVCChild.JoinVCChildID, joinVCChild.GuildID, session)
+	if err != nil {
+		return err
+	}
+
+	if numMembers == 0 {
+		return deleteJoinVCChildChannel(joinVCChild, transaction, session)
+	}
+
+	return nil
+}
+
+// deleteJoinVCChildChannel deletes the model.JoinVCChild channel from both the server and the database.
+func deleteJoinVCChildChannel(joinVCChild model.JoinVCChild, transaction pgx.Tx, session *discordgo.Session) error {
+	if _, err := session.ChannelDelete(joinVCChild.JoinVCChildID); err != nil {
+		return err
+	}
+
+	if _, err := database.DeleteModel[model.JoinVCChild](joinVCChild, transaction); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// movedIntoJoinVCChannel creates a new model.JoinVCChild channel and moves the user into it.
+func movedIntoJoinVCChannel(joinVC model.JoinVC, transaction pgx.Tx, session *discordgo.Session, interaction *discordgo.VoiceStateUpdate) error {
+	channelName := fmt.Sprintf("%s's channel", interaction.Member.DisplayName())
+
+	createdChannel, err := createChannelInCategory(joinVC.CategoryID, channelName, discordgo.ChannelTypeGuildVoice, interaction.GuildID, session)
+	if err != nil {
+		return err
+	}
+
+	if _, err = database.InsertModel[model.JoinVCChild](model.MakeJoinVCChild(createdChannel.ID, joinVC), transaction); err != nil {
+		return err
+	}
+
+	if err = session.GuildMemberMove(interaction.GuildID, interaction.UserID, &createdChannel.ID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func JoinToCreateVoiceChat(session *discordgo.Session, interaction *discordgo.InteractionCreate) {
@@ -46,7 +241,7 @@ func addJoinToCreateChannel(category *discordgo.Channel, session *discordgo.Sess
 		return
 	}
 
-	if channels, err := database.ReadModel[model.JoinVC](model.NewJoinVC("", "", category.ID), transaction); err != nil {
+	if channels, err := database.ReadModel[model.JoinVC](model.MakeJoinVC("", "", category.ID), transaction); err != nil {
 		if !databaseUtils.NoRowsRead(err) {
 			log.Printf("attempt to determine if a join to create voice channel in category [ %s ] already exists resulted in an error [ %s ]\n", category.Name, err)
 			if err = respondToInteraction(fmt.Sprintf("attempt to determine if a join to create voice channel in category [ %s ] already exists resulted in an error", category.Name), interaction, session); err != nil {
@@ -67,7 +262,7 @@ func addJoinToCreateChannel(category *discordgo.Channel, session *discordgo.Sess
 		return
 	}
 
-	createdChannel, err := createChannelInCategory(category, JOIN_VC_CHANNEL_NAME, discordgo.ChannelTypeGuildVoice, session, interaction)
+	createdChannel, err := createChannelInCategory(category.ID, JOIN_VC_CHANNEL_NAME, discordgo.ChannelTypeGuildVoice, interaction.GuildID, session)
 	if err != nil {
 		log.Printf("unable to create join to create voice channel in category [ %s ]\n", err)
 		if err = respondToInteraction(fmt.Sprintf("unable to create join to create voice channel in category [ %s ]", category.Name), interaction, session); err != nil {
@@ -77,7 +272,7 @@ func addJoinToCreateChannel(category *discordgo.Channel, session *discordgo.Sess
 		return
 	}
 
-	joinVC := model.NewJoinVC(createdChannel.ID, interaction.GuildID, category.ID)
+	joinVC := model.MakeJoinVC(createdChannel.ID, interaction.GuildID, category.ID)
 	if _, err = database.InsertModel[model.JoinVC](joinVC, transaction); err != nil {
 		log.Printf("unable to persist join to create voice channel in database [ %s ]\n", err)
 		if err = respondToInteraction(fmt.Sprintf("unable to persist join to create voice channel in category [ %s ]", category.Name), interaction, session); err != nil {
@@ -134,7 +329,7 @@ func deleteJoinToCreateChannel(category *discordgo.Channel, session *discordgo.S
 		return
 	}
 
-	if _, err = database.DeleteModel[model.JoinVC](model.NewJoinVC(channel.ID, "", ""), transaction); err != nil {
+	if _, err = database.DeleteModel[model.JoinVC](model.MakeJoinVC(channel.ID, "", ""), transaction); err != nil {
 		if !databaseUtils.NoRowsRead(err) {
 			log.Printf("unable to delete join to create channel in database with error [ %s ]\n", err)
 			if err = respondToInteraction("unable to delete join to create channel in database", interaction, session); err != nil {

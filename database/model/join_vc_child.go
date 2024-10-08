@@ -15,8 +15,8 @@ type JoinVCChild struct {
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
-func MakeJoinVCChild(joinVCChildID string, joinVCID string, guildID string, categoryID string) JoinVCChild {
-	return JoinVCChild{JoinVCChildID: joinVCChildID, JoinVCID: joinVCID, GuildID: guildID, CategoryID: categoryID}
+func MakeJoinVCChild(joinVCChildID string, joinVC JoinVC) JoinVCChild {
+	return JoinVCChild{JoinVCChildID: joinVCChildID, JoinVCID: joinVC.JoinVCID, GuildID: joinVC.GuildID, CategoryID: joinVC.CategoryID}
 }
 
 // GetInsertStatement implements the model.Model interface to create an appropriate utils.Statement for a new

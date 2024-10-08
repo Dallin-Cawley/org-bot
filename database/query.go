@@ -2,14 +2,12 @@ package database
 
 import (
 	"context"
+	"github.com/pkg/errors"
 	"log"
-	"strings"
-
 	"orgBot/database/model"
 	databaseUtils "orgBot/database/utils"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/pkg/errors"
 )
 
 // ReadModel will read the record(s) from the database identified by the utils.Statement given by
@@ -39,12 +37,12 @@ func query[T model.Model](statement *databaseUtils.Statement, transaction pgx.Tx
 
 	models, err := pgx.CollectRows[T](rows, pgx.RowToStructByName[T])
 	if err != nil {
-		log.Printf("scanning query results produced an error [ %s ]\n", err.Error())
-		if strings.Contains(err.Error(), "number of field descriptions") && strings.Contains(err.Error(), "and 0") {
-			return nil, errors.New(databaseUtils.NO_ROWS_RETURNED)
-		}
-
+		log.Printf("collecting query results produced an error [ %s ]\n", err.Error())
 		return nil, err
+	}
+
+	if len(models) == 0 {
+		return nil, errors.New(databaseUtils.NO_ROWS_RETURNED)
 	}
 
 	return models, nil

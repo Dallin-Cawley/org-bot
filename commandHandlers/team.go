@@ -180,15 +180,15 @@ func createChannelInCategoryWithRole(category *discordgo.Channel, name string, r
 	return createdChannel, nil
 }
 
-func createChannelInCategory(category *discordgo.Channel, name string, channelType discordgo.ChannelType, session *discordgo.Session, interaction *discordgo.InteractionCreate) (*discordgo.Channel, error) {
+func createChannelInCategory(categoryID string, name string, channelType discordgo.ChannelType, guildID string, session *discordgo.Session) (*discordgo.Channel, error) {
 	channelData := discordgo.GuildChannelCreateData{
 		Name:     name,
 		Type:     channelType,
-		ParentID: category.ID,
+		ParentID: categoryID,
 		NSFW:     false,
 	}
 
-	createdChannel, err := session.GuildChannelCreateComplex(interaction.GuildID, channelData)
+	createdChannel, err := session.GuildChannelCreateComplex(guildID, channelData)
 	if err != nil {
 		return nil, err
 	}

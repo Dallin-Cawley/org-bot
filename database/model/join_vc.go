@@ -14,8 +14,8 @@ type JoinVC struct {
 	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// NewJoinVC creates a new model.JoinVC
-func NewJoinVC(joinVCID string, guildID string, categoryID string) JoinVC {
+// MakeJoinVC creates a new model.JoinVC
+func MakeJoinVC(joinVCID string, guildID string, categoryID string) JoinVC {
 	return JoinVC{JoinVCID: joinVCID, GuildID: guildID, CategoryID: categoryID}
 }
 

@@ -45,9 +45,10 @@ CREATE OR REPLACE FUNCTION org_bot_schema.new_join_vc_child(_join_vc_child_id te
                                                             _join_vc_id text)
 
     RETURNS TABLE (
-                      join_vc_id text,
+                      join_vc_child_id text,
                       guild_id text,
                       category_id text,
+                      join_vc_id text,
                       created_at timestamp,
                       updated_at timestamp
                   ) AS
@@ -176,9 +177,10 @@ LANGUAGE SQL;
 CREATE OR REPLACE FUNCTION org_bot_schema.delete_join_vc_child(_join_vc_child_id text)
 
     RETURNS TABLE (
-                      join_vc_id text,
+                      join_vc_child_id text,
                       guild_id text,
                       category_id text,
+                      join_vc_id text,
                       created_at timestamp,
                       updated_at timestamp
                   ) AS

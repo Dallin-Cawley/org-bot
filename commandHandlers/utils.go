@@ -30,3 +30,19 @@ func getBotRoleID(guildID string, transaction pgx.Tx) (string, error) {
 
 	return guilds[0].BotRoleID, nil
 }
+
+func numMembersInVoiceChannel(channelID string, guildID string, session *discordgo.Session) (int, error) {
+	guild, err := session.State.Guild(guildID)
+	if err != nil {
+		return -1, err
+	}
+
+	numMembers := 0
+	for _, voiceState := range guild.VoiceStates {
+		if voiceState.ChannelID == channelID {
+			numMembers++
+		}
+	}
+
+	return numMembers, nil
+}

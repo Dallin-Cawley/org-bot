@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS org_bot_schema.join_vc_child
 (
     join_vc_child_id text PRIMARY KEY,
     guild_id         text,
-    category_id      text UNIQUE,
+    category_id      text,
     join_vc_id       text,
     created_at       TIMESTAMP DEFAULT NOW(),
     updated_at       TIMESTAMP

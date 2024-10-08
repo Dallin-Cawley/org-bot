@@ -57,5 +57,23 @@
         ]
       }
     ]
+  },
+  {
+    "name": "copy_role",
+    "description": "creates a new role with the same permissions as another",
+    "options": [
+      {
+        "type": 3,
+        "name": "new_role_name",
+        "description": "the name of the role to be created",
+        "required": true
+      },
+      {
+        "type": 8,
+        "name": "copy_role",
+        "description": "the role whose permissions will be copied to the new one",
+        "required": true
+      }
+    ]
   }
 ]
