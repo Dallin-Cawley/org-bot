@@ -26,5 +26,36 @@
         "required": true
       }
     ]
+  },
+  {
+    "name": "join_to_create",
+    "description": "adds or removes a join to create voice channel from a category",
+    "options": [
+      {
+        "type": 3,
+        "name": "action",
+        "description": "The action to be taken on the join to create voice channel",
+        "required": true,
+        "choices": [
+          {
+            "name": "add",
+            "value": "add"
+          },
+          {
+            "name": "delete",
+            "value": "delete"
+          }
+        ]
+      },
+      {
+        "type": 7,
+        "name": "category",
+        "description": "the category the join to create voice channel will be added to or deleted from",
+        "required": true,
+        "channel_types": [
+          4
+        ]
+      }
+    ]
   }
 ]

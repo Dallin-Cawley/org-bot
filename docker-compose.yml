@@ -1,8 +1,32 @@
 services:
-  release-bot:
+  database:
+    build:
+      context: database/
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - database
+  org-bot:
     env_file:
       - ./.env
     build:
       context: .
       dockerfile: Dockerfile
     image: org-bot
+    networks:
+      - database
+    depends_on:
+      - database
+
+networks:
+  database:
+
+volumes:
+  pgdata:
+
